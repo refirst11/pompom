@@ -1,0 +1,149 @@
+name: Release Fyne App
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos-universal:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Fyne tool
+        run: go install fyne.io/tools/cmd/fyne@latest
+
+      - name: Add GOPATH/bin to PATH
+        run: echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: MacOS Universal
+        run: |
+          env GOFLAGS="-buildvcs=false" fyne package -os darwin -icon icon.png -name pompom
+          zip -r pompom.app.zip pompom.app
+
+      - name: Upload MacOS universal assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pompom.app.zip
+
+  macos-arm64:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Fyne tool
+        run: go install fyne.io/tools/cmd/fyne@latest
+
+      - name: Add GOPATH/bin to PATH
+        run: echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: MacOS ARM64
+        run: |
+          env GOFLAGS="-buildvcs=false" fyne package -os darwin -icon icon.png -name pompom-arm64
+          zip -r pompom-arm64.zip pompom-arm64.app
+
+      - name: Upload MacOS ARM64 asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pompom-arm64.zip
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install fyne
+        shell: pwsh
+        run: go install fyne.io/tools/cmd/fyne@latest
+
+      - name: Add GOPATH/bin to PATH (Windows)
+        shell: pwsh
+        run: |
+          if (-not $env:GOPATH) { $env:GOPATH = "$env:USERPROFILE\go" }
+          $binPath = Join-Path $env:GOPATH "bin"
+          Add-Content -Path $env:GITHUB_PATH -Value $binPath
+
+      - name: Windows
+        shell: pwsh
+        run: |
+          $env:GOFLAGS = "-buildvcs=false"
+          fyne package -os windows -icon icon.png -name pompom.exe
+          Compress-Archive -Path pompom.exe -DestinationPath pompom.exe.zip
+
+      - name: Upload Windows
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pompom.exe.zip
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libgl1-mesa-dev xorg-dev
+
+      - name: Install fyne
+        run: go install fyne.io/tools/cmd/fyne@latest
+
+      - name: Add to PATH
+        run: echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: Linux AppImage
+        run: |
+          env GOFLAGS="-buildvcs=false" fyne package -os linux -icon icon.png -name pompom.AppImage
+          zip pompom.AppImage.zip *pompom*
+
+      - name: Upload Linux
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pompom.AppImage.zip
+
+  release:
+    needs: [macos-universal, macos-arm64, windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set release title & generate notes
+        uses: softprops/action-gh-release@v2
+        with:
+          name: pompom ${{ github.ref_name }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
