@@ -33,6 +33,7 @@ jobs:
       - name: MacOS x64
         run: |
           env GOFLAGS="-buildvcs=false" fyne package -os darwin -icon icon.png -name pompom
+          codesign --force --deep --sign - pompom.app
           zip -r pompom.x64.zip pompom.app
 
       - name: Upload MacOS x64 assets
@@ -63,6 +64,7 @@ jobs:
       - name: MacOS arm64
         run: |
           env GOFLAGS="-buildvcs=false" fyne package -os darwin -icon icon.png -name pompom
+          codesign --force --deep --sign - pompom.app
           zip -r pompom.arm64.zip pompom.app
 
       - name: Upload MacOS ARM64 asset
