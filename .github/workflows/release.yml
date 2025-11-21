@@ -10,8 +10,8 @@ permissions:
   contents: write
 
 jobs:
-  macos-universal:
-    runs-on: macos-latest
+  macos-x64:
+    runs-on: macos-15-intel
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,15 +30,15 @@ jobs:
       - name: Add GOPATH/bin to PATH
         run: echo "$HOME/go/bin" >> $GITHUB_PATH
 
-      - name: MacOS Universal
+      - name: MacOS x64
         run: |
           env GOFLAGS="-buildvcs=false" fyne package -os darwin -icon icon.png -name pompom
-          zip -r pompom.app.zip pompom.app
+          zip -r pompom.x64.zip pompom.app
 
-      - name: Upload MacOS universal assets
+      - name: Upload MacOS x64 assets
         uses: softprops/action-gh-release@v2
         with:
-          files: pompom.app.zip
+          files: pompom.x64.zip
 
   macos-arm64:
     runs-on: macos-15
@@ -60,15 +60,15 @@ jobs:
       - name: Add GOPATH/bin to PATH
         run: echo "$HOME/go/bin" >> $GITHUB_PATH
 
-      - name: MacOS ARM64
+      - name: MacOS arm64
         run: |
-          env GOFLAGS="-buildvcs=false" fyne package -os darwin -icon icon.png -name pompom-arm64
-          zip -r pompom-arm64.zip pompom-arm64.app
+          env GOFLAGS="-buildvcs=false" fyne package -os darwin -icon icon.png -name pompom
+          zip -r pompom.arm64.zip pompom.app
 
       - name: Upload MacOS ARM64 asset
         uses: softprops/action-gh-release@v2
         with:
-          files: pompom-arm64.zip
+          files: pompom.arm64.zip
 
   windows:
     runs-on: windows-latest
@@ -137,7 +137,7 @@ jobs:
           files: pompom.AppImage.zip
 
   release:
-    needs: [macos-universal, macos-arm64, windows, linux]
+    needs: [macos-x64, macos-arm64, windows, linux]
     runs-on: ubuntu-latest
     steps:
       - name: Set release title & generate notes
