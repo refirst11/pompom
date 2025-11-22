@@ -47,7 +47,7 @@ func NewPomodoroTimer(w fyne.Window) *PomodoroTimer {
 	timerText.Set("25:00")
 	
 	statusText := binding.NewString()
-	statusText.Set("Ready to start! 🍅")
+	statusText.Set("Ready to start ! 🍅")
 	
 	p := &PomodoroTimer{
 		window:       w,
@@ -113,7 +113,7 @@ func (p *PomodoroTimer) start() {
 	p.pauseButton.Enable()
 	p.resetButton.Enable()
 	p.minutesEntry.Disable()
-	p.statusText.Set("🍅 Work Time - Focus!")
+	p.statusText.Set("🍅 Work Time - Focus !")
 	
 	// Start the timer
 	go p.runTimer()
@@ -132,9 +132,9 @@ func (p *PomodoroTimer) pause() {
 		p.pauseButton.SetIcon(theme.MediaPauseIcon())
 
 		if p.isWorkTime {
-			p.statusText.Set("🍅 Work Time - Focus!")
+			p.statusText.Set("🍅 Work Time - Focus !")
 		} else {
-			p.statusText.Set("☕ Break Time - Relax!")
+			p.statusText.Set("☕ Break Time - Relax !")
 		}
 	} else {
 		// Pause
@@ -163,7 +163,7 @@ func (p *PomodoroTimer) reset() {
 	
 	// UI update
 	p.timerText.Set(fmt.Sprintf("%02d:00", p.workMinutes))
-	p.statusText.Set("Ready to start! 🍅")
+	p.statusText.Set("Ready to start ! 🍅")
 	p.startButton.Enable()
 	p.pauseButton.Disable()
 	p.pauseButton.SetText("Pause")
@@ -239,14 +239,14 @@ func (p *PomodoroTimer) startBreak() {
 	p.remaining = p.breakMinutes * 60
 	p.isWorkTime = false
 	p.isPaused = false
-	p.statusText.Set("☕ Break Time - Relax!")
+	p.statusText.Set("☕ Break Time - Relax !")
 	
 	go p.runTimer()
 }
 
 func (p *PomodoroTimer) buildUI() fyne.CanvasObject {
 	title := widget.NewLabelWithStyle(
-		"🍅 Pomodoro Timer (pompom)",
+		"🍅 Pomodoro Timer",
 		fyne.TextAlignCenter,
 		fyne.TextStyle{Bold: true},
 	)
