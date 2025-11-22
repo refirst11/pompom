@@ -4,7 +4,7 @@ This is a pomodoro app using Go fyne.
 [Mac(Intel)](https://github.com/refirst11/pompom/releases/latest/download/pompom.x64.zip) - [Linux](https://github.com/refirst11/pompom/releases/latest/download/pompom.linux.zip) -
 [Windows](https://github.com/refirst11/pompom/releases/latest/download/pompom.exe.zip)
 
-<img width="398" height="519" alt="2025-11-22" src="https://github.com/user-attachments/assets/5dc58f58-8b2e-4b69-94ff-57eba0d659f5" />
+<img width="388" height="516" src="https://github.com/user-attachments/assets/8736a97a-406a-4cd4-80b4-7b47ba534e0c" />
 
 ## Downloads
 
