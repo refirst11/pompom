@@ -149,7 +149,12 @@ func (p *PomodoroTimer) pause() {
 func (p *PomodoroTimer) reset() {
 	// Stop the timer
 	if p.isRunning {
-		p.stopChan <- true
+		select {
+		case p.stopChan <- true:
+		// Sent stop signal
+		default:
+			// Goroutine not listening, probably already stopped
+		}
 	}
 	
 	p.isRunning = false
@@ -208,27 +213,25 @@ func (p *PomodoroTimer) handleTimerEnd() {
 		// End of work time
 		p.timerText.Set("00:00")
 		p.statusText.Set("Work session finished! 🎉")
-		
+
 		dialog.ShowInformation(
 			"Work Session Complete! 🍅",
 			"Great job! Time for a break.",
 			p.window,
 		)
-		
+
 		// Switch to break time
 		p.startBreak()
 	} else {
 		// Break time is end
 		p.timerText.Set("00:00")
 		p.statusText.Set("Break finished! Ready for next session 💪")
-		
-		dialog.ShowInformation(
-			"Break Complete! ☕",
-			"Feeling refreshed? Let's start the next work session!",
-			p.window,
-		)
-		
-		p.reset()
+
+		// Schedule the reset and start on the main thread to avoid race conditions
+		fyne.Do(func() {
+			p.reset()
+			p.start()
+		})
 	}
 }
 
