@@ -16,18 +16,18 @@ import (
 )
 
 type PomodoroTimer struct {
-	window       fyne.Window
-	
+	window fyne.Window
+
 	// Data binding (thread safe)
-	timerText    binding.String
-	statusText   binding.String
-	
+	timerText  binding.String
+	statusText binding.String
+
 	// Widget
 	minutesEntry *widget.Entry
 	startButton  *widget.Button
 	pauseButton  *widget.Button
 	resetButton  *widget.Button
-	
+
 	// Timer state
 	workMinutes  int
 	breakMinutes int
@@ -35,20 +35,20 @@ type PomodoroTimer struct {
 	isRunning    bool
 	isPaused     bool
 	isWorkTime   bool
-	
+
 	// Control channel
-	stopChan     chan bool
-	pauseChan    chan bool
-	resumeChan   chan bool
+	stopChan   chan bool
+	pauseChan  chan bool
+	resumeChan chan bool
 }
 
 func NewPomodoroTimer(w fyne.Window) *PomodoroTimer {
 	timerText := binding.NewString()
 	timerText.Set("25:00")
-	
+
 	statusText := binding.NewString()
 	statusText.Set("Ready to start ! 🍅")
-	
+
 	p := &PomodoroTimer{
 		window:       w,
 		timerText:    timerText,
@@ -59,7 +59,7 @@ func NewPomodoroTimer(w fyne.Window) *PomodoroTimer {
 		pauseChan:    make(chan bool),
 		resumeChan:   make(chan bool),
 	}
-	
+
 	p.createWidgets()
 	return p
 }
@@ -69,19 +69,19 @@ func (p *PomodoroTimer) createWidgets() {
 	p.minutesEntry = widget.NewEntry()
 	p.minutesEntry.SetText("25")
 	p.minutesEntry.SetPlaceHolder("Minutes")
-	
+
 	// Start button
 	p.startButton = widget.NewButtonWithIcon("Start", theme.MediaPlayIcon(), func() {
 		p.start()
 	})
 	p.startButton.Importance = widget.HighImportance
-	
+
 	// Stop button
 	p.pauseButton = widget.NewButtonWithIcon("Pause", theme.MediaPauseIcon(), func() {
 		p.pause()
 	})
 	p.pauseButton.Disable()
-	
+
 	// Reset button
 	p.resetButton = widget.NewButtonWithIcon("Reset", theme.MediaStopIcon(), func() {
 		p.reset()
@@ -93,7 +93,7 @@ func (p *PomodoroTimer) start() {
 	if p.isRunning {
 		return
 	}
-	
+
 	//Get the input value
 	text := p.minutesEntry.Text
 	min, err := strconv.Atoi(text)
@@ -101,20 +101,20 @@ func (p *PomodoroTimer) start() {
 		dialog.ShowError(fmt.Errorf("invalid minutes: please enter a positive number"), p.window)
 		return
 	}
-	
+
 	p.workMinutes = min
 	p.remaining = min * 60
 	p.isRunning = true
 	p.isPaused = false
 	p.isWorkTime = true
-	
+
 	// UI update
 	p.startButton.Disable()
 	p.pauseButton.Enable()
 	p.resetButton.Enable()
 	p.minutesEntry.Disable()
 	p.statusText.Set("🍅 Work Time - Focus !")
-	
+
 	// Start the timer
 	go p.runTimer()
 }
@@ -156,11 +156,11 @@ func (p *PomodoroTimer) reset() {
 			// Goroutine not listening, probably already stopped
 		}
 	}
-	
+
 	p.isRunning = false
 	p.isPaused = false
 	p.remaining = p.workMinutes * 60
-	
+
 	// UI update
 	p.timerText.Set(fmt.Sprintf("%02d:00", p.workMinutes))
 	p.statusText.Set("Ready to start ! 🍅")
@@ -175,21 +175,21 @@ func (p *PomodoroTimer) reset() {
 func (p *PomodoroTimer) runTimer() {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
-	
+
 	for p.remaining >= 0 {
 		// Display the remaining time
 		minutes := p.remaining / 60
 		seconds := p.remaining % 60
 		p.timerText.Set(fmt.Sprintf("%02d:%02d", minutes, seconds))
-		
+
 		if p.remaining == 0 {
 			break
 		}
-		
+
 		select {
 		case <-p.stopChan:
 			return
-			
+
 		case <-p.pauseChan:
 			// Paused
 			select {
@@ -198,12 +198,12 @@ func (p *PomodoroTimer) runTimer() {
 			case <-p.stopChan:
 				return
 			}
-			
+
 		case <-ticker.C:
 			p.remaining--
 		}
 	}
-	
+
 	// Timer end
 	p.handleTimerEnd()
 }
@@ -212,20 +212,18 @@ func (p *PomodoroTimer) handleTimerEnd() {
 	if p.isWorkTime {
 		// End of work time
 		p.timerText.Set("00:00")
-		p.statusText.Set("Work session finished! 🎉")
 
-		dialog.ShowInformation(
-			"Work Session Complete! 🍅",
-			"Great job! Time for a break.",
-			p.window,
-		)
+		// Wait for 1 second
+		time.Sleep(1 * time.Second)
 
 		// Switch to break time
 		p.startBreak()
 	} else {
 		// Break time is end
 		p.timerText.Set("00:00")
-		p.statusText.Set("Break finished! Ready for next session 💪")
+
+		// Wait for 1 second
+		time.Sleep(1 * time.Second)
 
 		// Schedule the reset and start on the main thread to avoid race conditions
 		fyne.Do(func() {
@@ -240,7 +238,7 @@ func (p *PomodoroTimer) startBreak() {
 	p.isWorkTime = false
 	p.isPaused = false
 	p.statusText.Set("☕ Break Time - Relax !")
-	
+
 	go p.runTimer()
 }
 
@@ -294,7 +292,7 @@ func (p *PomodoroTimer) buildUI() fyne.CanvasObject {
 		layout.NewSpacer(),
 		container.NewCenter(settingsRow), // Center alignment
 		layout.NewSpacer(),
-		container.NewCenter(buttonRow),   // Center alignment
+		container.NewCenter(buttonRow), // Center alignment
 		layout.NewSpacer(),
 	)
 
@@ -305,12 +303,12 @@ func (p *PomodoroTimer) buildUI() fyne.CanvasObject {
 func main() {
 	myApp := app.New()
 	myWindow := myApp.NewWindow("pompom")
-	
+
 	pomodoro := NewPomodoroTimer(myWindow)
-	
+
 	myWindow.SetContent(pomodoro.buildUI())
 	myWindow.Resize(fyne.NewSize(400, 500))
 	myWindow.CenterOnScreen()
-	
+
 	myWindow.ShowAndRun()
 }
