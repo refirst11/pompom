@@ -26,3 +26,7 @@ create the application files.
 ```sh
 env GOFLAGS="-buildvcs=false" fyne package -os darwin -icon icon.png
 ```
+
+## License
+
+pompom is MIT License.
