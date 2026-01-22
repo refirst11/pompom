@@ -237,8 +237,16 @@ func (p *PomodoroTimer) startBreak() {
 	p.remaining = p.breakMinutes * 60
 	p.isWorkTime = false
 	p.isPaused = false
-	p.statusText.Set("☕ Break Time - Relax !")
 
+	fyne.Do(func() {
+		dialog.ShowInformation(
+			"Break Time ☕",
+			"It's break time! Relax.",
+			p.window,
+		)
+	})
+	
+	p.statusText.Set("☕ Break Time - Relax !")
 	go p.runTimer()
 }
 
