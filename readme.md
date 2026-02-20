@@ -1,8 +1,10 @@
-This is a pomodoro app using Go fyne.
+This is a pomodoro app using Go fyne.  
+Sound Effect by [OtoLogic](https://otologic.jp/) (CC BY 4.0)
 
 <img width="388" height="516" src="https://github.com/user-attachments/assets/8736a97a-406a-4cd4-80b4-7b47ba534e0c" />
 
 ## Installing
+
 [Mac(Apple Silicon)](https://github.com/refirst11/pompom/releases/latest/download/pompom.arm64.zip) -
 [Mac(Intel)](https://github.com/refirst11/pompom/releases/latest/download/pompom.x64.zip) - [Linux](https://github.com/refirst11/pompom/releases/latest/download/pompom.linux.zip) -
 [Windows](https://github.com/refirst11/pompom/releases/latest/download/pompom.exe.zip)
@@ -17,4 +19,4 @@ xattr -cr /Applications/pompom.app
 
 ## License
 
-pompom is MIT License.
+pompom source code is MIT License.
