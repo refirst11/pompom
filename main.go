@@ -13,7 +13,17 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+
+	"embed"
+
+	"github.com/faiface/beep"
+	"github.com/faiface/beep/effects"
+	"github.com/faiface/beep/mp3"
+	"github.com/faiface/beep/speaker"
 )
+
+//go:embed notification.mp3
+var soundFiles embed.FS
 
 type PomodoroTimer struct {
 	window fyne.Window
@@ -35,11 +45,14 @@ type PomodoroTimer struct {
 	isRunning    bool
 	isPaused     bool
 	isWorkTime   bool
+	breakDialog  dialog.Dialog
 
 	// Control channel
 	stopChan   chan bool
 	pauseChan  chan bool
 	resumeChan chan bool
+
+	volumeSlider *widget.Slider
 }
 
 func NewPomodoroTimer(w fyne.Window) *PomodoroTimer {
@@ -55,9 +68,9 @@ func NewPomodoroTimer(w fyne.Window) *PomodoroTimer {
 		statusText:   statusText,
 		workMinutes:  25,
 		breakMinutes: 5,
-		stopChan:     make(chan bool),
-		pauseChan:    make(chan bool),
-		resumeChan:   make(chan bool),
+		stopChan:     make(chan bool, 1),
+		pauseChan:    make(chan bool, 1),
+		resumeChan:   make(chan bool, 1),
 	}
 
 	p.createWidgets()
@@ -87,6 +100,11 @@ func (p *PomodoroTimer) createWidgets() {
 		p.reset()
 	})
 	p.resetButton.Disable()
+
+	// Volume slider
+	p.volumeSlider = widget.NewSlider(0, 100)
+	p.volumeSlider.SetValue(50)
+	// Suggest a fixed width for the slider to look better in the corner
 }
 
 func (p *PomodoroTimer) start() {
@@ -127,7 +145,10 @@ func (p *PomodoroTimer) pause() {
 	if p.isPaused {
 		// Resume
 		p.isPaused = false
-		p.resumeChan <- true
+		select {
+		case p.resumeChan <- true:
+		default:
+		}
 		p.pauseButton.SetText("Pause")
 		p.pauseButton.SetIcon(theme.MediaPauseIcon())
 
@@ -139,7 +160,10 @@ func (p *PomodoroTimer) pause() {
 	} else {
 		// Pause
 		p.isPaused = true
-		p.pauseChan <- true
+		select {
+		case p.pauseChan <- true:
+		default:
+		}
 		p.pauseButton.SetText("Resume")
 		p.pauseButton.SetIcon(theme.MediaPlayIcon())
 		p.statusText.Set("⏸️ Paused")
@@ -155,6 +179,11 @@ func (p *PomodoroTimer) reset() {
 		default:
 			// Goroutine not listening, probably already stopped
 		}
+	}
+
+	if p.breakDialog != nil {
+		p.breakDialog.Hide()
+		p.breakDialog = nil
 	}
 
 	p.isRunning = false
@@ -225,12 +254,74 @@ func (p *PomodoroTimer) handleTimerEnd() {
 		// Wait for 1 second
 		time.Sleep(1 * time.Second)
 
-		// Schedule the reset and start on the main thread to avoid race conditions
+		// Schedule the restart on the main thread to avoid race conditions.
 		fyne.Do(func() {
-			p.reset()
+			if p.breakDialog != nil {
+				p.breakDialog.Hide()
+				p.breakDialog = nil
+			}
+
+			// Drain any stale signals from channels
+			select {
+			case <-p.stopChan:
+			default:
+			}
+			select {
+			case <-p.pauseChan:
+			default:
+			}
+			select {
+			case <-p.resumeChan:
+			default:
+			}
+
+			// Reset state directly
+			p.isRunning = false
+			p.isPaused = false
+
+			// UI reset
+			p.startButton.Enable()
+			p.pauseButton.Disable()
+			p.pauseButton.SetText("Pause")
+			p.pauseButton.SetIcon(theme.MediaPauseIcon())
+			p.resetButton.Disable()
+			p.minutesEntry.Enable()
+			p.timerText.Set(fmt.Sprintf("%02d:00", p.workMinutes))
+			p.statusText.Set("Ready to start ! 🍅")
+
+			// Start next work session
 			p.start()
 		})
 	}
+}
+
+func (p *PomodoroTimer) playSound(filename string) {
+	f, err := soundFiles.Open(filename)
+	if err != nil {
+		fmt.Println("Error opening sound file:", err)
+		return
+	}
+
+	streamer, format, err := mp3.Decode(f)
+	if err != nil {
+		fmt.Println("Error decoding mp3:", err)
+		return
+	}
+
+	// Initialize speaker. Note: Init can be called multiple times, but 
+	// we should ideally do it once or when the format changes.
+	speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+
+	// Apply volume
+	volume := &effects.Volume{
+		Streamer: streamer,
+		Base:     2,
+		Volume:   (p.volumeSlider.Value / 20.0) - 5.0, // 100 -> 0, 0 -> -5
+	}
+
+	speaker.Play(beep.Seq(volume, beep.Callback(func() {
+		streamer.Close()
+	})))
 }
 
 func (p *PomodoroTimer) startBreak() {
@@ -238,13 +329,22 @@ func (p *PomodoroTimer) startBreak() {
 	p.isWorkTime = false
 	p.isPaused = false
 
-	fyne.Do(func() {
-		dialog.ShowInformation(
-			"Break Time ☕",
-			"It's break time! Relax.",
-			p.window,
-		)
-	})
+	// Play notification sound
+	go p.playSound("notification.mp3")
+
+    fyne.Do(func() {
+        if p.volumeSlider.Value == 0 {
+            if p.breakDialog != nil {
+                p.breakDialog.Hide()
+            }
+            p.breakDialog = dialog.NewInformation(
+                "Break Time ☕",
+                "It's break time! Relax.",
+                p.window,
+            )
+            p.breakDialog.Show()
+        }
+    })
 	
 	p.statusText.Set("☕ Break Time - Relax !")
 	go p.runTimer()
@@ -255,6 +355,17 @@ func (p *PomodoroTimer) buildUI() fyne.CanvasObject {
 		"🍅 Pomodoro Timer",
 		fyne.TextAlignCenter,
 		fyne.TextStyle{Bold: true},
+	)
+
+	// Volume control at the top right
+	volLabel := widget.NewLabelWithStyle("", fyne.TextAlignTrailing, fyne.TextStyle{})
+	p.volumeSlider.Step = 1.0
+	// Set min size to the slider so it's not too small or too wide
+	volContainer := container.NewHBox(volLabel, container.NewGridWrap(fyne.NewSize(100, 40), p.volumeSlider))
+	
+	header := container.NewStack(
+		container.NewCenter(title),
+		container.NewHBox(layout.NewSpacer(), volContainer),
 	)
 
 	// Display timer (large)
@@ -290,7 +401,7 @@ func (p *PomodoroTimer) buildUI() fyne.CanvasObject {
 
 	// Main layout
 	content := container.NewVBox(
-		container.NewCenter(title),
+		header,
 		layout.NewSpacer(),
 		container.NewCenter(timerRich),
 		layout.NewSpacer(),
