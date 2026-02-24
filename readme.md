@@ -1,7 +1,7 @@
 This is a pomodoro app using Go fyne.  
 Sound Effect by [OtoLogic](https://otologic.jp/) (CC BY 4.0)
 
-<img width="388" height="516" src="https://github.com/user-attachments/assets/8736a97a-406a-4cd4-80b4-7b47ba534e0c" />
+<img width="404" height="530" src="https://github.com/user-attachments/assets/545083ed-fa35-40fc-a12c-b863a06bd35f" />
 
 ## Installing
 
