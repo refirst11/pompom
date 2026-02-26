@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image/color"
 	"strconv"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -26,6 +27,11 @@ import (
 //go:embed notification.mp3
 var soundFiles embed.FS
 
+var (
+    speakerOnce sync.Once
+    speakerErr  error
+)
+
 type PomodoroTimer struct {
 	window     fyne.Window
 	timerText  binding.String
@@ -44,16 +50,15 @@ type PomodoroTimer struct {
 	isWorkTime   bool
 	breakDialog  dialog.Dialog
 
-	stopChan   chan bool
-	pauseChan  chan bool
-	resumeChan chan bool
+	stopChan   chan struct{}
+	pauseChan  chan struct{}
+	resumeChan chan struct{}
 
 	volumeSlider *widget.Slider
 	progress     binding.Float
 
-	endTime     time.Time
-	totalTasks  int
-	pauseTime   time.Time
+	endTime   time.Time
+	pauseTime time.Time
 }
 
 func NewPomodoroTimer(w fyne.Window) *PomodoroTimer {
@@ -68,9 +73,9 @@ func NewPomodoroTimer(w fyne.Window) *PomodoroTimer {
 		statusText:   statusText,
 		workMinutes:  25,
 		breakMinutes: 5,
-		stopChan:     make(chan bool, 1),
-		pauseChan:    make(chan bool, 1),
-		resumeChan:   make(chan bool, 1),
+		stopChan:     make(chan struct{}, 1),
+		pauseChan:    make(chan struct{}, 1),
+		resumeChan:   make(chan struct{}, 1),
 		progress:     binding.NewFloat(),
 	}
 	p.progress.Set(1.0)
@@ -112,7 +117,6 @@ func (p *PomodoroTimer) start() {
 		return
 	}
 	p.workMinutes = min
-	p.remaining = min * 60
 	p.isRunning = true
 	p.isPaused = false
 	p.isWorkTime = true
@@ -133,11 +137,14 @@ func (p *PomodoroTimer) pause() {
 		return
 	}
 	if p.isPaused {
+		// Resume
 		p.isPaused = false
-		p.endTime = p.endTime.Add(time.Since(p.pauseTime))
+		elapsed := time.Since(p.pauseTime)
+		p.endTime = p.endTime.Add(elapsed)
 
+		drainChan(p.resumeChan)
 		select {
-		case p.resumeChan <- true:
+		case p.resumeChan <- struct{}{}:
 		default:
 		}
 		p.pauseButton.SetText("Pause")
@@ -148,11 +155,13 @@ func (p *PomodoroTimer) pause() {
 			p.statusText.Set("☕ Break Time - Relax !")
 		}
 	} else {
+		// Pause
 		p.isPaused = true
 		p.pauseTime = time.Now()
 
+		drainChan(p.pauseChan)
 		select {
-		case p.pauseChan <- true:
+		case p.pauseChan <- struct{}{}:
 		default:
 		}
 		p.pauseButton.SetText("Resume")
@@ -163,27 +172,35 @@ func (p *PomodoroTimer) pause() {
 
 func (p *PomodoroTimer) reset() {
 	if p.isRunning {
+		drainChan(p.stopChan)
 		select {
-		case p.stopChan <- true:
+		case p.stopChan <- struct{}{}:
+		default:
+		}
+		drainChan(p.resumeChan)
+		select {
+		case p.resumeChan <- struct{}{}:
 		default:
 		}
 	}
-	if p.breakDialog != nil {
-		p.breakDialog.Hide()
-		p.breakDialog = nil
-	}
+
+	fyne.Do(func() {
+		if p.breakDialog != nil {
+			p.breakDialog.Hide()
+			p.breakDialog = nil
+		}
+		p.startButton.Enable()
+		p.pauseButton.Disable()
+		p.pauseButton.SetText("Pause")
+		p.pauseButton.SetIcon(theme.MediaPauseIcon())
+		p.resetButton.Disable()
+		p.minutesEntry.Enable()
+	})
+
 	p.isRunning = false
 	p.isPaused = false
-	p.remaining = p.workMinutes * 60
-
 	p.timerText.Set(fmt.Sprintf("%02d:00", p.workMinutes))
 	p.statusText.Set("Ready to start ! 🍅")
-	p.startButton.Enable()
-	p.pauseButton.Disable()
-	p.pauseButton.SetText("Pause")
-	p.pauseButton.SetIcon(theme.MediaPauseIcon())
-	p.resetButton.Disable()
-	p.minutesEntry.Enable()
 	p.progress.Set(1.0)
 }
 
@@ -191,33 +208,14 @@ func (p *PomodoroTimer) runTimer() {
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 
-	lastSec := -1
+	totalSec := func() float64 {
+		if p.isWorkTime {
+			return float64(p.workMinutes * 60)
+		}
+		return float64(p.breakMinutes * 60)
+	}
 
 	for {
-		remainingDuration := time.Until(p.endTime)
-		if remainingDuration <= 0 {
-			p.remaining = 0
-			p.progress.Set(0.0)
-			break
-		}
-
-		p.remaining = int(remainingDuration.Seconds())
-		minutes := p.remaining / 60
-		seconds := p.remaining % 60
-
-		if p.remaining != lastSec {
-			p.timerText.Set(fmt.Sprintf("%02d:%02d", minutes, seconds))
-			lastSec = p.remaining
-		}
-
-		totalSec := p.workMinutes * 60
-		if !p.isWorkTime {
-			totalSec = p.breakMinutes * 60
-		}
-		if totalSec > 0 {
-			p.progress.Set(remainingDuration.Seconds() / float64(totalSec))
-		}
-
 		select {
 		case <-p.stopChan:
 			return
@@ -229,6 +227,29 @@ func (p *PomodoroTimer) runTimer() {
 			}
 		case <-ticker.C:
 		}
+
+		remainingDuration := time.Until(p.endTime)
+
+		if remainingDuration <= 0 {
+			p.timerText.Set("00:00")
+			p.progress.Set(0.0)
+			break
+		}
+
+		remaining := int(remainingDuration.Seconds())
+		minutes := remaining / 60
+		seconds := remaining % 60
+
+		p.timerText.Set(fmt.Sprintf("%02d:%02d", minutes, seconds))
+
+		total := totalSec()
+		if total > 0 {
+			ratio := remainingDuration.Seconds() / total
+			if ratio > 1.0 {
+				ratio = 1.0
+			}
+			p.progress.Set(ratio)
+		}
 	}
 
 	p.handleTimerEnd()
@@ -236,39 +257,34 @@ func (p *PomodoroTimer) runTimer() {
 
 func (p *PomodoroTimer) handleTimerEnd() {
 	if p.isWorkTime {
-		p.timerText.Set("00:00")
-		time.Sleep(1 * time.Second)
+		time.Sleep(500 * time.Millisecond)
 		p.startBreak()
 	} else {
-		p.timerText.Set("00:00")
-		time.Sleep(1 * time.Second)
+		time.Sleep(500 * time.Millisecond)
 		fyne.Do(func() {
 			if p.breakDialog != nil {
 				p.breakDialog.Hide()
 				p.breakDialog = nil
 			}
-			select {
-			case <-p.stopChan:
-			default:
-			}
-			select {
-			case <-p.pauseChan:
-			default:
-			}
-			select {
-			case <-p.resumeChan:
-			default:
-			}
+
+			drainChan(p.stopChan)
+			drainChan(p.pauseChan)
+			drainChan(p.resumeChan)
+
 			p.isRunning = false
 			p.isPaused = false
+
 			p.startButton.Enable()
 			p.pauseButton.Disable()
 			p.pauseButton.SetText("Pause")
 			p.pauseButton.SetIcon(theme.MediaPauseIcon())
 			p.resetButton.Disable()
 			p.minutesEntry.Enable()
+
 			p.timerText.Set(fmt.Sprintf("%02d:00", p.workMinutes))
 			p.statusText.Set("Ready to start ! 🍅")
+			p.progress.Set(1.0)
+
 			fyne.CurrentApp().SendNotification(fyne.NewNotification("Work Time 🍅", "Break is over. Focus time!"))
 			p.start()
 		})
@@ -286,7 +302,16 @@ func (p *PomodoroTimer) playSound(filename string) {
 		fmt.Println("Error decoding mp3:", err)
 		return
 	}
-	speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+
+	speakerOnce.Do(func() {
+		speakerErr = speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+	})
+	if speakerErr != nil {
+		fmt.Println("speaker.Init error:", speakerErr)
+		streamer.Close()
+		return
+	}
+
 	volume := &effects.Volume{
 		Streamer: streamer,
 		Base:     2,
@@ -305,6 +330,7 @@ func (p *PomodoroTimer) startBreak() {
 
 	go p.playSound("notification.mp3")
 	fyne.CurrentApp().SendNotification(fyne.NewNotification("Break Time ☕", "It's break time! Relax."))
+
 	fyne.Do(func() {
 		if p.volumeSlider.Value == 0 {
 			if p.breakDialog != nil {
@@ -317,9 +343,9 @@ func (p *PomodoroTimer) startBreak() {
 			)
 			p.breakDialog.Show()
 		}
+		p.statusText.Set("☕ Break Time - Relax !")
 	})
 
-	p.statusText.Set("☕ Break Time - Relax !")
 	go p.runTimer()
 }
 
@@ -350,7 +376,9 @@ func (p *PomodoroTimer) buildUI() fyne.CanvasObject {
 
 	p.timerText.AddListener(binding.NewDataListener(func() {
 		text, _ := p.timerText.Get()
-		timerRich.ParseMarkdown("# " + text)
+		fyne.Do(func() {
+			timerRich.ParseMarkdown("# " + text)
+		})
 	}))
 
 	statusLabel := widget.NewLabelWithData(p.statusText)
@@ -399,6 +427,16 @@ func main() {
 	myWindow.ShowAndRun()
 }
 
+func drainChan(ch chan struct{}) {
+	for {
+		select {
+		case <-ch:
+		default:
+			return
+		}
+	}
+}
+
 type CircularProgress struct {
 	widget.BaseWidget
 	Progress binding.Float
@@ -412,9 +450,11 @@ func NewCircularProgress(progress binding.Float) *CircularProgress {
 
 	cp.Progress.AddListener(binding.NewDataListener(func() {
 		val, _ := cp.Progress.Get()
-		cp.arc.StartAngle = float32(360 * (1 - val))
-		cp.arc.EndAngle = 360
-		cp.Refresh()
+		fyne.Do(func() {
+			cp.arc.StartAngle = float32(360 * (1 - val))
+			cp.arc.EndAngle = 360
+			cp.Refresh()
+		})
 	}))
 	return cp
 }
