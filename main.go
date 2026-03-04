@@ -312,6 +312,8 @@ func (p *PomodoroTimer) playSound(filename string) {
 		return
 	}
 
+	speaker.Clear()
+
 	volume := &effects.Volume{
 		Streamer: streamer,
 		Base:     2,
@@ -319,6 +321,7 @@ func (p *PomodoroTimer) playSound(filename string) {
 	}
 	speaker.Play(beep.Seq(volume, beep.Callback(func() {
 		streamer.Close()
+		f.Close()
 	})))
 }
 
